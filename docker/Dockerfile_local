@@ -1,0 +1,9 @@
+FROM rust:1.49.0 as builder
+WORKDIR /usr/src/supapro-telegram
+COPY . .
+RUN cargo install --path .
+
+FROM debian:buster-slim
+RUN apt-get update && apt-get install -y openssl ca-certificates && aplt-get clean
+COPY --from=builder /usr/local/cargo/bin/supapro-telegram /usr/local/bin/supapro-telegram
+CMD ["supapro-telegram"]
