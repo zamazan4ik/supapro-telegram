@@ -71,6 +71,7 @@ async fn process_forward_command(
             // 1) Forward reply of this command to a target chat
             // 2) Delete it from the current chat
             // 3) Send a message to an original author with a notification
+            // 4) Delete message with command from current chat
 
             if let Some(reply) = cx.update.reply_to_message() {
                 let forwarded_msg = cx
@@ -111,6 +112,11 @@ async fn process_forward_command(
                 cx.bot
                     .send_message(cx.update.chat_id(), response)
                     .parse_mode(ParseMode::HTML)
+                    .send()
+                    .await?;
+
+                cx.bot
+                    .delete_message(cx.update.chat.id, cx.update.id)
                     .send()
                     .await?;
             } else {
