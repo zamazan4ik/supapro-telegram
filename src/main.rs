@@ -4,6 +4,7 @@ mod parameters;
 mod webhook;
 
 use teloxide::{prelude::*, utils::command::BotCommand};
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 #[tokio::main]
 async fn main() {
@@ -19,8 +20,9 @@ async fn run() {
 
     let bot = Bot::from_env();
 
-    let bot_dispatcher =
-        Dispatcher::new(bot.clone()).messages_handler(move |rx: DispatcherHandlerRx<Message>| {
+    let mut bot_dispatcher = Dispatcher::new(bot.clone()).messages_handler(
+        move |rx: DispatcherHandlerRx<Bot, Message>| {
+            let rx = UnboundedReceiverStream::new(rx);
             rx.for_each(move |message| {
                 let parameters = bot_parameters.clone();
                 async move {
@@ -42,7 +44,8 @@ async fn run() {
                     };
                 }
             })
-        });
+        },
+    );
 
     if parameters.is_webhook_mode_enabled {
         log::info!("Webhook mode activated");

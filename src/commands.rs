@@ -15,7 +15,7 @@ pub enum Command {
 }
 
 pub async fn command_answer(
-    cx: &UpdateWithCx<Message>,
+    cx: &UpdateWithCx<Bot, Message>,
     command: Command,
     parameters: std::sync::Arc<parameters::Parameters>,
 ) -> anyhow::Result<()> {
@@ -53,19 +53,19 @@ pub async fn command_answer(
 }
 
 async fn process_forward_command(
-    cx: &UpdateWithCx<Message>,
+    cx: &UpdateWithCx<Bot, Message>,
     chat_id_to: i64,
     chat_username_to: &str,
 ) -> anyhow::Result<()> {
     if let Some(user) = cx.update.from() {
         let status = cx
-            .bot
+            .requester
             .get_chat_member(cx.update.chat_id(), user.id)
             .send()
             .await?
-            .status;
+            .status();
 
-        if status == teloxide::types::ChatMemberStatus::Creator
+        if status == teloxide::types::ChatMemberStatus::Owner
             || status == teloxide::types::ChatMemberStatus::Administrator
         {
             // 1) Forward reply of this command to a target chat
@@ -75,12 +75,12 @@ async fn process_forward_command(
 
             if let Some(reply) = cx.update.reply_to_message() {
                 let forwarded_msg = cx
-                    .bot
+                    .requester
                     .forward_message(chat_id_to, reply.chat.id, reply.id)
                     .send()
                     .await?;
 
-                cx.bot
+                cx.requester
                     .delete_message(reply.chat.id, reply.id)
                     .send()
                     .await?;
@@ -109,13 +109,13 @@ async fn process_forward_command(
                     )
                 };
 
-                cx.bot
+                cx.requester
                     .send_message(cx.update.chat_id(), response)
-                    .parse_mode(ParseMode::HTML)
+                    .parse_mode(ParseMode::Html)
                     .send()
                     .await?;
 
-                cx.bot
+                cx.requester
                     .delete_message(cx.update.chat.id, cx.update.id)
                     .send()
                     .await?;

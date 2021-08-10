@@ -4,7 +4,10 @@ use actix_web::middleware;
 use actix_web::web;
 use actix_web::{App, HttpResponse, HttpServer, Responder};
 use std::env;
+use teloxide::dispatching::{stop_token::AsyncStopToken, update_listeners::StatefulListener};
 use teloxide::prelude::*;
+use teloxide::types::Update;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 async fn telegram_request(
     tx: web::Data<mpsc::UnboundedSender<Result<Update, String>>>,
@@ -31,7 +34,9 @@ async fn telegram_request(
     HttpResponse::Ok()
 }
 
-pub async fn webhook(bot: Bot) -> mpsc::UnboundedReceiver<Result<Update, String>> {
+pub async fn webhook(
+    bot: Bot,
+) -> impl teloxide::dispatching::update_listeners::UpdateListener<String> {
     let bind_address = Result::unwrap_or(env::var("BIND_ADDRESS"), "0.0.0.0".to_string());
     let bind_port: u16 = env::var("BIND_PORT")
         .unwrap_or("8080".to_string())
@@ -39,14 +44,13 @@ pub async fn webhook(bot: Bot) -> mpsc::UnboundedReceiver<Result<Update, String>
         .expect("BIND_PORT value has to be an integer");
 
     let host = env::var("HOST").expect("HOST env variable missing");
-    let path = match env::var("WEBHOOK_URI"){
+    let path = match env::var("WEBHOOK_URI") {
         Ok(path) => path,
-        Err(_e) =>  env::var("TELOXIDE_TOKEN").expect("TELOXIDE_TOKEN env variable missing")
+        Err(_e) => env::var("TELOXIDE_TOKEN").expect("TELOXIDE_TOKEN env variable missing"),
     };
     let url = format!("https://{}/{}", host, path);
 
-
-    bot.set_webhook(url)
+    bot.set_webhook(url.parse().unwrap())
         .send()
         .await
         .expect("Cannot setup a webhook");
@@ -56,18 +60,28 @@ pub async fn webhook(bot: Bot) -> mpsc::UnboundedReceiver<Result<Update, String>
     let sender_channel_data: web::Data<mpsc::UnboundedSender<Result<Update, String>>> =
         web::Data::new(tx);
 
-    let local = tokio::task::LocalSet::new();
-    let sys = actix_rt::System::run_in_tokio("server", &local);
-    HttpServer::new(move || {
-        App::new()
-            .wrap(middleware::Logger::default())
-            .app_data(sender_channel_data.clone())
-            .route(path.as_str(), web::post().to(telegram_request))
-    })
-    .bind(format!("{}:{}", bind_address, bind_port))
-    .unwrap()
-    .run();
-    tokio::spawn(sys);
+    tokio::spawn(async move {
+        HttpServer::new(move || {
+            App::new()
+                .wrap(middleware::Logger::default())
+                .app_data(sender_channel_data.clone())
+                .route(path.as_str(), web::post().to(telegram_request))
+        })
+        .bind(format!("{}:{}", bind_address, bind_port))
+        .unwrap()
+        .run()
+    });
 
-    return rx;
+    let stream = UnboundedReceiverStream::new(rx);
+
+    fn streamf<S, T>(state: &mut (S, T)) -> &mut S {
+        &mut state.0
+    }
+
+    let (stop_token, _) = AsyncStopToken::new_pair();
+    StatefulListener::new(
+        (stream, stop_token),
+        streamf,
+        |state: &mut (_, AsyncStopToken)| state.1.clone(),
+    )
 }
