@@ -1,5 +1,5 @@
 use crate::parameters;
-use teloxide::{prelude::*, utils::command::BotCommand};
+use teloxide::{prelude::*, types::ParseMode, utils::command::BotCommand, utils::html};
 
 #[derive(BotCommand)]
 #[command(rename = "lowercase", description = "These commands are supported:")]
@@ -73,7 +73,8 @@ async fn process_forward_command(
             // 3) Send a message to an original author with a notification
 
             if let Some(reply) = cx.update.reply_to_message() {
-                cx.bot
+                let forwarded_msg = cx
+                    .bot
                     .forward_message(chat_id_to, reply.chat.id, reply.id)
                     .send()
                     .await?;
@@ -83,21 +84,33 @@ async fn process_forward_command(
                     .send()
                     .await?;
 
+                let chat_ref = format!("@{}", chat_username_to);
+
+                let forwarded_msg_ref = match forwarded_msg.url() {
+                    Some(url) => html::link(&url.to_string(), &chat_ref),
+                    None => chat_ref,
+                };
+
                 let response = if let Some(original_author) = reply.from() {
+                    let author_ref = original_author
+                        .mention()
+                        .unwrap_or(original_author.full_name());
+
                     format!(
-                        "{}, Ваш вопрос перемещён в чат @{}. Там Вам с радостью помогут решить проблему :)",
-                        original_author.mention().unwrap_or(original_author.full_name()),
-                        chat_username_to
+                        "{}, Ваш вопрос перемещён в чат {}. Там Вам с радостью помогут решить проблему :)",
+                        html::escape(&author_ref),
+                        forwarded_msg_ref
                     )
                 } else {
                     format!(
-                        "Вопрос перемещён в чат @{}. Там с радостью помогут решить проблему :)",
-                        chat_username_to
+                        "Вопрос перемещён в чат {}. Там с радостью помогут решить проблему :)",
+                        forwarded_msg_ref
                     )
                 };
 
                 cx.bot
                     .send_message(cx.update.chat_id(), response)
+                    .parse_mode(ParseMode::HTML)
                     .send()
                     .await?;
             } else {
