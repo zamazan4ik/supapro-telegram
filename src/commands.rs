@@ -1,5 +1,5 @@
 use crate::parameters;
-use teloxide::{prelude::*, utils::command::BotCommand};
+use teloxide::{prelude::*, types::ParseMode, utils::command::BotCommand, utils::html};
 
 #[derive(BotCommand)]
 #[command(rename = "lowercase", description = "These commands are supported:")]
@@ -71,11 +71,11 @@ async fn process_forward_command(
             // 1) Forward reply of this command to a target chat
             // 2) Delete it from the current chat
             // 3) Send a message to an original author with a notification
+            // 4) Delete message with command from current chat
 
             if let Some(reply) = cx.update.reply_to_message() {
-                let original_author = reply.from();
-
-                cx.bot
+                let forwarded_msg = cx
+                    .bot
                     .forward_message(chat_id_to, reply.chat.id, reply.id)
                     .send()
                     .await?;
@@ -85,22 +85,40 @@ async fn process_forward_command(
                     .send()
                     .await?;
 
-                let mut response = format!("Ваш вопрос перемещён в чат @{} . Там Вам с радостью помогут с Вашей проблемой :)", chat_username_to).to_string();
-                if let Some(original_author) = original_author {
-                    if let Some(username) = &original_author.username {
-                        response = format!("@{} {}", username, response);
-                    }
+                let chat_ref = format!("@{}", chat_username_to);
 
-                    cx.bot
-                        .send_message(cx.update.chat_id(), response)
-                        .send()
-                        .await?;
+                let forwarded_msg_ref = match forwarded_msg.url() {
+                    Some(url) => html::link(&url.to_string(), &chat_ref),
+                    None => chat_ref,
+                };
+
+                let response = if let Some(original_author) = reply.from() {
+                    let author_ref = original_author
+                        .mention()
+                        .unwrap_or(original_author.full_name());
+
+                    format!(
+                        "{}, Ваш вопрос перемещён в чат {}. Там Вам с радостью помогут решить проблему :)",
+                        html::escape(&author_ref),
+                        forwarded_msg_ref
+                    )
                 } else {
-                    cx.bot
-                        .send_message(cx.update.chat_id(), response)
-                        .send()
-                        .await?;
-                }
+                    format!(
+                        "Вопрос перемещён в чат {}. Там с радостью помогут решить проблему :)",
+                        forwarded_msg_ref
+                    )
+                };
+
+                cx.bot
+                    .send_message(cx.update.chat_id(), response)
+                    .parse_mode(ParseMode::HTML)
+                    .send()
+                    .await?;
+
+                cx.bot
+                    .delete_message(cx.update.chat.id, cx.update.id)
+                    .send()
+                    .await?;
             } else {
                 static MISSING_REPLY: &str = "Пожалуйста, ответьте на сообщение. Спасибо!";
                 cx.reply_to(MISSING_REPLY).send().await?;
