@@ -1,18 +1,24 @@
 use tokio::sync::mpsc;
 
-use actix_web::middleware;
-use actix_web::web;
-use actix_web::{App, HttpResponse, HttpServer, Responder};
+use axum::extract::Extension;
+use axum::http::StatusCode;
+use axum::prelude::*;
+use axum::response::IntoResponse;
+use axum::routing::RoutingDsl;
 use std::env;
+use std::net::SocketAddr;
 use teloxide::dispatching::{stop_token::AsyncStopToken, update_listeners::StatefulListener};
+use teloxide::prelude::Request;
 use teloxide::prelude::*;
 use teloxide::types::Update;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tower::ServiceBuilder;
+use tower_http::{add_extension::AddExtensionLayer, trace::TraceLayer};
 
 async fn telegram_request(
-    tx: web::Data<mpsc::UnboundedSender<Result<Update, String>>>,
     input: String,
-) -> impl Responder {
+    tx: Extension<mpsc::UnboundedSender<Result<Update, String>>>,
+) -> impl IntoResponse {
     let try_parse = match serde_json::from_str(&input) {
         Ok(update) => Ok(update),
         Err(error) => {
@@ -31,7 +37,7 @@ async fn telegram_request(
             .expect("Cannot send an incoming update from the webhook")
     }
 
-    HttpResponse::Ok()
+    StatusCode::OK
 }
 
 pub async fn webhook(
@@ -57,19 +63,22 @@ pub async fn webhook(
 
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let sender_channel_data: web::Data<mpsc::UnboundedSender<Result<Update, String>>> =
-        web::Data::new(tx);
+    let app = route(format!("/{}", path).as_str(), post(telegram_request)).layer(
+        ServiceBuilder::new()
+            .layer(TraceLayer::new_for_http())
+            .layer(AddExtensionLayer::new(tx))
+            .into_inner(),
+    );
+
+    let server_address: SocketAddr = format!("{}:{}", bind_address, bind_port)
+        .parse()
+        .expect("Unable to parse socket address");
 
     tokio::spawn(async move {
-        HttpServer::new(move || {
-            App::new()
-                .wrap(middleware::Logger::default())
-                .app_data(sender_channel_data.clone())
-                .route(path.as_str(), web::post().to(telegram_request))
-        })
-        .bind(format!("{}:{}", bind_address, bind_port))
-        .unwrap()
-        .run()
+        axum::Server::bind(&server_address)
+            .serve(app.into_make_service())
+            .await
+            .expect("Axum server error")
     });
 
     let stream = UnboundedReceiverStream::new(rx);
