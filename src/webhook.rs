@@ -1,10 +1,9 @@
 use tokio::sync::mpsc;
 
 use axum::extract::Extension;
+use axum::handler::post;
 use axum::http::StatusCode;
-use axum::prelude::*;
 use axum::response::IntoResponse;
-use axum::routing::RoutingDsl;
 use std::env;
 use std::net::SocketAddr;
 use teloxide::dispatching::{stop_token::AsyncStopToken, update_listeners::StatefulListener};
@@ -63,12 +62,14 @@ pub async fn webhook(
 
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let app = route(format!("/{}", path).as_str(), post(telegram_request)).layer(
-        ServiceBuilder::new()
-            .layer(TraceLayer::new_for_http())
-            .layer(AddExtensionLayer::new(tx))
-            .into_inner(),
-    );
+    let app = axum::Router::new()
+        .route(format!("/{}", path).as_str(), post(telegram_request))
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .layer(AddExtensionLayer::new(tx))
+                .into_inner(),
+        );
 
     let server_address: SocketAddr = format!("{}:{}", bind_address, bind_port)
         .parse()

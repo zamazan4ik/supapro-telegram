@@ -7,17 +7,17 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.42"
-axum = "0.1.3"
+anyhow = "1.0.44"
+axum = "0.2.5"
 chrono = "0.4.19"
 log = "0.4.14"
 once_cell = "1.8.0"
 once-cell-regex = "0.2.1"
 pretty_env_logger = "0.4.0"
 regex = "1.5.4"
-serde_json = "1.0.64"
-teloxide = { version = "0.5.1", features = ["auto-send", "macros"] }
-tokio = { version = "1.9.0", features = ["rt-multi-thread", "macros"] }
+serde_json = "1.0.68"
+teloxide = { version = "0.5.2", features = ["auto-send", "macros"] }
+tokio = { version = "1.12.0", features = ["rt-multi-thread", "macros"] }
 tokio-stream = "0.1.7"
 tower = "0.4.8"
 tower-http = { version = "0.1.1", features = ["trace"] }
