@@ -1,4 +1,4 @@
-FROM docker.io/rust:1.54.0 as builder
+FROM docker.io/rust:1.55.0 as builder
 WORKDIR /usr/src/supapro-telegram
 ARG SUPAPRO_SOURCE_URL=https://github.com/ZaMaZaN4iK/supapro-telegram.git
 ARG CACHE_DATE=2020-01-01
