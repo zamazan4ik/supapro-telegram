@@ -1,7 +1,7 @@
 use crate::parameters;
-use teloxide::{prelude::*, types::ParseMode, utils::command::BotCommand, utils::html};
+use teloxide::{prelude::*, types::ParseMode, utils::command::BotCommands, utils::html};
 
-#[derive(BotCommand)]
+#[derive(Clone, BotCommands)]
 #[command(rename = "lowercase", description = "These commands are supported:")]
 pub enum Command {
     #[command(description = "display this text.")]
@@ -14,8 +14,9 @@ pub enum Command {
     Pro,
 }
 
-pub async fn command_answer(
-    cx: &UpdateWithCx<Bot, Message>,
+pub async fn command_handler(
+    msg: Message,
+    bot: AutoSend<Bot>,
     command: Command,
     parameters: std::sync::Arc<parameters::Parameters>,
 ) -> anyhow::Result<()> {
@@ -26,23 +27,29 @@ pub async fn command_answer(
 
     match command {
         Command::Help => {
-            cx.reply_to(HELP_TEXT).send().await?;
+            bot.send_message(msg.chat.id, HELP_TEXT)
+                .reply_to_message_id(msg.id)
+                .await?;
         }
         Command::About => {
-            cx.reply_to(ABOUT_TEXT).send().await?;
+            bot.send_message(msg.chat.id, ABOUT_TEXT)
+                .reply_to_message_id(msg.id)
+                .await?;
         }
         Command::Supapro => {
             process_forward_command(
-                &cx,
-                parameters.supapro_chat_id,
+                msg,
+                bot,
+                teloxide::types::ChatId(parameters.supapro_chat_id),
                 parameters.supapro_chat_username.as_str(),
             )
             .await?;
         }
         Command::Pro => {
             process_forward_command(
-                &cx,
-                parameters.pro_chat_id,
+                msg,
+                bot,
+                teloxide::types::ChatId(parameters.pro_chat_id),
                 parameters.pro_chat_username.as_str(),
             )
             .await?;
@@ -53,17 +60,13 @@ pub async fn command_answer(
 }
 
 async fn process_forward_command(
-    cx: &UpdateWithCx<Bot, Message>,
-    chat_id_to: i64,
+    msg: Message,
+    bot: AutoSend<Bot>,
+    chat_id_to: teloxide::types::ChatId,
     chat_username_to: &str,
 ) -> anyhow::Result<()> {
-    if let Some(user) = cx.update.from() {
-        let status = cx
-            .requester
-            .get_chat_member(cx.update.chat_id(), user.id)
-            .send()
-            .await?
-            .status();
+    if let Some(user) = msg.from() {
+        let status = bot.get_chat_member(msg.chat.id, user.id).await?.status();
 
         if status == teloxide::types::ChatMemberStatus::Owner
             || status == teloxide::types::ChatMemberStatus::Administrator
@@ -73,17 +76,12 @@ async fn process_forward_command(
             // 3) Send a message to an original author with a notification
             // 4) Delete message with command from current chat
 
-            if let Some(reply) = cx.update.reply_to_message() {
-                let forwarded_msg = cx
-                    .requester
+            if let Some(reply) = msg.reply_to_message() {
+                let forwarded_msg = bot
                     .forward_message(chat_id_to, reply.chat.id, reply.id)
-                    .send()
                     .await?;
 
-                cx.requester
-                    .delete_message(reply.chat.id, reply.id)
-                    .send()
-                    .await?;
+                bot.delete_message(reply.chat.id, reply.id).await?;
 
                 let chat_ref = format!("@{}", chat_username_to);
 
@@ -109,19 +107,16 @@ async fn process_forward_command(
                     )
                 };
 
-                cx.requester
-                    .send_message(cx.update.chat_id(), response)
+                bot.send_message(msg.chat.id, response)
                     .parse_mode(ParseMode::Html)
-                    .send()
                     .await?;
 
-                cx.requester
-                    .delete_message(cx.update.chat.id, cx.update.id)
-                    .send()
-                    .await?;
+                bot.delete_message(msg.chat.id, msg.id).await?;
             } else {
                 static MISSING_REPLY: &str = "Пожалуйста, ответьте на сообщение. Спасибо!";
-                cx.reply_to(MISSING_REPLY).send().await?;
+                bot.send_message(msg.chat.id, MISSING_REPLY)
+                    .reply_to_message_id(msg.id)
+                    .await?;
             }
         }
     }

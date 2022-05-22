@@ -3,8 +3,7 @@ mod logging;
 mod parameters;
 mod webhook;
 
-use teloxide::{prelude::*, utils::command::BotCommand};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use teloxide::prelude::*;
 
 #[tokio::main]
 async fn main() {
@@ -16,53 +15,39 @@ async fn run() {
     log::info!("Starting Supapro bot");
 
     let parameters = std::sync::Arc::new(parameters::Parameters::new());
-    let bot_parameters = parameters.clone();
 
-    let bot = Bot::from_env();
+    let bot = Bot::from_env().auto_send();
 
-    let mut bot_dispatcher = Dispatcher::new(bot.clone()).messages_handler(
-        move |rx: DispatcherHandlerRx<Bot, Message>| {
-            let rx = UnboundedReceiverStream::new(rx);
-            rx.for_each(move |message| {
-                let parameters = bot_parameters.clone();
-                async move {
-                    let message_text = match message.update.text() {
-                        Some(x) => x,
-                        None => return,
-                    };
-
-                    // Handle commands. If command cannot be parsed - continue processing
-                    match commands::Command::parse(message_text, &parameters.bot_name) {
-                        Ok(command) => {
-                            commands::command_answer(&message, command, parameters)
-                                .await
-                                .log_on_error()
-                                .await;
-                            ()
-                        }
-                        Err(_) => (),
-                    };
-                }
-            })
-        },
+    let handler = Update::filter_message().branch(
+        dptree::entry()
+            .filter_command::<commands::Command>()
+            .endpoint(commands::command_handler),
     );
+
+    if !parameters.is_webhook_mode_enabled {
+        log::info!("Webhook deleted");
+        bot.delete_webhook().await.expect("Cannot delete a webhook");
+    }
+
+    let mut bot_dispatcher = Dispatcher::builder(bot.clone(), handler)
+        .default_handler(|_| async move {})
+        .error_handler(LoggingErrorHandler::with_custom_text(
+            "An error has occurred in the dispatcher",
+        ))
+        .build();
 
     if parameters.is_webhook_mode_enabled {
         log::info!("Webhook mode activated");
         let rx = webhook::webhook(bot);
         bot_dispatcher
+            .setup_ctrlc_handler()
             .dispatch_with_listener(
                 rx.await,
                 LoggingErrorHandler::with_custom_text("An error from the update listener"),
             )
             .await;
-        return;
+    } else {
+        log::info!("Long polling mode activated");
+        bot_dispatcher.setup_ctrlc_handler().dispatch().await;
     }
-
-    log::info!("Long polling mode activated");
-    bot.delete_webhook()
-        .send()
-        .await
-        .expect("Cannot delete a webhook");
-    bot_dispatcher.dispatch().await;
 }
