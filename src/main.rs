@@ -30,6 +30,7 @@ async fn run() {
     }
 
     let mut bot_dispatcher = Dispatcher::builder(bot.clone(), handler)
+        .dependencies(dptree::deps![parameters.clone()])
         .default_handler(|_| async move {})
         .error_handler(LoggingErrorHandler::with_custom_text(
             "An error has occurred in the dispatcher",
