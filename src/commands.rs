@@ -37,6 +37,7 @@ pub async fn command_handler(
                 .await?;
         }
         Command::Supapro => {
+            log::info!("Match supapro command");
             process_forward_command(
                 msg,
                 bot,
@@ -66,17 +67,22 @@ async fn process_forward_command(
     chat_username_to: &str,
 ) -> anyhow::Result<()> {
     if let Some(user) = msg.from() {
+        log::info!("Found user");
         let status = bot.get_chat_member(msg.chat.id, user.id).await?.status();
 
         if status == teloxide::types::ChatMemberStatus::Owner
             || status == teloxide::types::ChatMemberStatus::Administrator
         {
+            log::info!("Status is {:?}", status);
             // 1) Forward reply of this command to a target chat
             // 2) Delete it from the current chat
             // 3) Send a message to an original author with a notification
             // 4) Delete message with command from current chat
 
+            log::info!("Message: {:?}", msg);
+
             if let Some(reply) = msg.reply_to_message() {
+                log::info!("Found reply");
                 let forwarded_msg = bot
                     .forward_message(chat_id_to, reply.chat.id, reply.id)
                     .await?;
