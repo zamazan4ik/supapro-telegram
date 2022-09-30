@@ -2,7 +2,7 @@
 Small bot which helps maintain C++ telegram channels.
 
 ### Dependencies
-* [Rust](https://www.rust-lang.org/) 1.61 or newer
+* [Rust](https://www.rust-lang.org/) 1.64 or newer
 * Cargo
 
 ### How to build
