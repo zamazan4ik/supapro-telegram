@@ -41,7 +41,8 @@ pub async fn command_handler(
             process_forward_command(
                 msg,
                 bot,
-                teloxide::types::ChatId(parameters.supapro_chat_id),
+                parameters.pro_chat_id,
+                parameters.supapro_chat_id,
                 parameters.supapro_chat_username.as_str(),
             )
             .await?;
@@ -50,7 +51,8 @@ pub async fn command_handler(
             process_forward_command(
                 msg,
                 bot,
-                teloxide::types::ChatId(parameters.pro_chat_id),
+                parameters.supapro_chat_id,
+                parameters.pro_chat_id,
                 parameters.pro_chat_username.as_str(),
             )
             .await?;
@@ -63,26 +65,37 @@ pub async fn command_handler(
 async fn process_forward_command(
     msg: Message,
     bot: AutoSend<Bot>,
+    chat_id_from: teloxide::types::ChatId,
     chat_id_to: teloxide::types::ChatId,
     chat_username_to: &str,
 ) -> anyhow::Result<()> {
+    // We allow use forward commands only from the specified in the config chats
+    if msg.chat.id != chat_id_from {
+        bot.send_message(
+            msg.chat.id,
+            "Пересылка доступна только из разрешённых чатов.",
+        )
+        .reply_to_message_id(msg.id)
+        .await?;
+        return Ok(());
+    }
+
     if let Some(user) = msg.from() {
-        log::info!("Found user");
         let status = bot.get_chat_member(msg.chat.id, user.id).await?.status();
 
         if status == teloxide::types::ChatMemberStatus::Owner
             || status == teloxide::types::ChatMemberStatus::Administrator
         {
-            log::info!("Status is {:?}", status);
+            log::debug!("Status is {:?}", status);
             // 1) Forward reply of this command to a target chat
             // 2) Delete it from the current chat
             // 3) Send a message to an original author with a notification
             // 4) Delete message with command from current chat
 
-            log::info!("Message: {:?}", msg);
+            log::debug!("Message: {:?}", msg);
 
             if let Some(reply) = msg.reply_to_message() {
-                log::info!("Found reply");
+                log::debug!("Found reply");
                 let forwarded_msg = bot
                     .forward_message(chat_id_to, reply.chat.id, reply.id)
                     .await?;
